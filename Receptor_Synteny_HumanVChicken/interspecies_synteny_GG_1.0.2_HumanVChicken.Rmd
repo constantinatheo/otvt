@@ -1,0 +1,1085 @@
+---
+title: "Interspecies_synteny_OXTR/VTRs_GG_1.0.1_Chicken"
+output: html_document
+---
+
+### Set the human standards for each receptor ###
+```{r}
+#load Biomart
+library(biomaRt)
+library(tidyr)
+
+#Set your dataset as the human. We'll want to get our reference gene windows
+ensembl <- useMart("ensembl",dataset = "hsapiens_gene_ensembl")
+
+#see types of attributes we can pull out
+#head(listAttributes(ensembl),15)
+
+#and the types of filters we can search by
+#head(listFilters(ensembl),15)
+
+oxtr_Chrloc <- 3
+vtr1a_Chrloc <- 12
+vtr1b_Chrloc <- 1
+vtr2a_Chrloc <- "X"
+
+human_reference_regions <- vector("list",4)
+chrom_pos <- list(3,12,1,"X") ##Chromosome positions above
+goi <- c("OXTR","AVPR1A","AVPR1B","AVPR2")
+names(human_reference_regions) <- goi
+names(chrom_pos) <- goi
+
+for (i in goi) {
+  print(i)
+  tmpGene <- i
+  tmpDB <- getBM(attributes = c("hgnc_symbol","external_gene_name","ensembl_gene_id", "gene_biotype","chromosome_name","start_position","end_position","strand"),filters = "chromosome_name", values = chrom_pos[[i]], mart = ensembl)
+  tmpDB <- tmpDB[order(tmpDB$start_position),] ##change to reflect gene order
+  tmpDB <- tmpDB[grep("protein_coding",tmpDB$gene_biotype),]
+  human_reference_regions[[i]] <- tmpDB
+}
+
+
+```
+
+
+
+This code will call all annotations for the chromosomes of interest in Chicken, and then narrow it down to only protein coding genes in a 20 x 20 window around our gene of interest (GOI). I am using the spreadsheet we generated to denote how many receptors each species has. 
+```{r}
+ensembl <- useMart("ensembl",dataset = "ggallus_gene_ensembl")
+oxtr_Chrloc <- 12
+vtr1a_Chrloc <- 1
+vtr1b_Chrloc <- 26
+vtr2c_Chrloc <- 1
+
+chicken_test_regions <- vector("list",4)
+chrom_pos <- list(12,1,26,1) ##Chromosome positions above
+ensembl_ids <- list("ENSGALG00000003138","ENSGALG00000040567","ENSGALG00000000788","ENSGALG00000009497")
+goi <- c("OXTR","AVPR1A","AVPR1B","AVPR2C")
+names(chicken_test_regions) <- goi
+names(chrom_pos) <- goi
+names(ensembl_ids) <- goi
+
+
+
+for (i in goi) {
+  print(i)
+  tmpGene <- i
+  tmpDB <- getBM(attributes = c("hgnc_symbol","external_gene_name","ensembl_gene_id", "gene_biotype","chromosome_name","start_position","end_position"),filters = "chromosome_name", values = chrom_pos[[i]], mart = ensembl)
+  tmpDB <- tmpDB[order(tmpDB$start_position),] ##change to reflect gene order
+  tmpDB <- tmpDB[grep("protein_coding",tmpDB$gene_biotype),]
+  pos <- grep(ensembl_ids[[i]],tmpDB$ensembl_gene_id)
+  upper <- pos+20
+  lower <- pos-20
+  tmpDB <- tmpDB[lower:upper,]
+  chicken_test_regions[[i]] <- tmpDB
+}
+
+
+
+```
+
+
+SynFind with all possible matches                                                          
+```{r}
+all_hits <- read.delim("~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/ChickenVHuman/ChickenVHuman_40_2_density_last.txt", header = TRUE,stringsAsFactors = FALSE)
+all_hits <- all_hits[,-6] #gets ride of GeVo links
+```
+                                
+        
+
+
+                                                           ###TESTING HUMAN OXTR ####
+```{r}
+
+ref_chr <-human_reference_regions$OXTR
+dim(ref_chr)
+
+gg_chrMatches <- all_hits[na.omit(match(ref_chr$ensembl_gene_id,all_hits$ORG..Homo.sapiens..human.)),]
+gg_chrMatches$gene_name <- ref_chr[match(gg_chrMatches$ORG..Homo.sapiens..human.,human_reference_regions$OXTR$ensembl_gene_id),1]
+test <- gg_chrMatches
+
+gg_chrMatches <- gg_chrMatches %>% separate(X.COUNTS, c("#_Human_Gene","#_Chicken_Matches"))
+gg_chrMatches <- gg_chrMatches %>% separate(ORG..Gallus.gallus..Chicken., c("M1","M2","M3","M4","M5","M6","M7","M8","M9"))
+gg_chrMatches2 <- gg_chrMatches %>% separate(CHR..Gallus.gallus..Chicken., c("M1","M2","M3","M4","M5","M6","M7","M8","M9"),sep = ",")
+
+```
+
+Set all matches to proxy as NA
+```{r}
+GeneMatches <- gg_chrMatches[,4:12]
+ChrMatches <- gg_chrMatches2[,6:14]
+
+for (i in colnames(GeneMatches)) {
+  tmpIDx <- grep("proxy",GeneMatches[,i])
+  ChrMatches[tmpIDx,i] <- NA
+}
+
+head(GeneMatches)
+head(ChrMatches)
+
+```
+
+Genes on Chicken Chr12 in synteny with human OXTR region. Its critical to intersect them with the OXTR test window defined above. 
+```{r}
+
+#OXTR
+C1_IDs <- ChrMatches
+testList <- list()
+
+
+for (i in colnames(C1_IDs)) {
+  tmpIDx <- grep(oxtr_Chrloc,C1_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr12_ids <- as.vector(unlist(testList))
+
+oxtr_cross <- intersect(chicken_test_regions$OXTR$ensembl_gene_id,Chr12_ids)
+
+
+
+##VTR1B
+C2_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C2_IDs)) {
+  tmpIDx <- grep(vtr1b_Chrloc,C2_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr26_ids <- as.vector(unlist(testList))
+
+v1b_cross <- intersect(chicken_test_regions$AVPR1B$ensembl_gene_id,Chr26_ids)
+
+
+
+###VTR1A###
+
+C3_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C3_IDs)) {
+  tmpIDx <- grep(vtr1a_Chrloc,C3_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v1a_cross <- intersect(chicken_test_regions$AVPR1A$ensembl_gene_id,Chr1_ids)
+
+
+###V2C###
+C4_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C4_IDs)) {
+  tmpIDx <- grep(vtr2c_Chrloc,C4_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- unlist(testList, recursive = TRUE)
+
+v2c_cross <- intersect(chicken_test_regions$AVPR2C$ensembl_gene_id,Chr1_ids)
+
+
+```
+
+
+Define TRUE POSITIVES from Chicken IDS
+```{r}
+##OXTR
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(oxtr_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_OXTR <- as.vector(na.omit(unlist(testList)))
+
+##V1A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1A <- as.vector(na.omit(unlist(testList)))
+
+##AVPR1B
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1b_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1B <- as.vector(na.omit(unlist(testList)))
+
+
+##V2C
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2c_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2C <- as.vector(na.omit(unlist(testList)))
+```
+
+
+
+Chicken Loop: Simply ask if any window (of increasing size from Human OXTR) is enriched for our true positives genes around the respective Chicken genes. 
+```{r}
+windowSizeR <- 50
+windowSizeL <- 18
+SynRight <- matrix(ncol = 5, nrow = windowSizeR)
+colnames(SynRight) <- c("Window from Human OXTR","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2C")
+SynLeft <- matrix(ncol = 5, nrow = windowSizeL)
+colnames(SynLeft) <- c("Window from Human OXTR","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2C")
+
+ for (i in 1:windowSizeR) {
+  tmpDB_right <- gg_chrMatches[(grep("ENSG00000180914",gg_chrMatches$ORG..Homo.sapiens..human.)+i):grep("ENSG00000180914",gg_chrMatches$ORG..Homo.sapiens..human.),]
+
+
+  SynRight[i,1] <- i
+  
+  SynRight[i,2] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynRight[i,3] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynRight[i,4] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynRight[i,5] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynRight <- as.data.frame(SynRight)
+}
+  
+for (i in 1:windowSizeL) {
+  tmpDB_left <- gg_chrMatches[(grep("ENSG00000180914",gg_chrMatches$ORG..Homo.sapiens..human.)-i):grep("ENSG00000180914",gg_chrMatches$ORG..Homo.sapiens..human.),]
+  
+  
+  
+  SynLeft[i,1] <- -i
+  
+  SynLeft[i,2] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynLeft[i,3] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynLeft[i,4] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynLeft[i,5] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynLeft <- as.data.frame(SynLeft)
+}
+
+SynRight <- rbind(c(0,1,1,1,1),SynRight) #only hits = OXTR and V1B, V2C, V1A
+SynLeft <- rbind(c(0,1,1,1,1),SynLeft)
+```
+
+```{r}
+pdf(file = "~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/ChickenVHuman/ChickenVsHumanOXTR_Synteny_plot.pdf")
+ggplot() + 
+  geom_line(aes(x = SynRight$`Window from Human OXTR`, y = SynRight$`Syntenic Genes vs Chicken OXTR`,color = "myline1"), size = 1) +
+  geom_line(aes(x = SynLeft$`Window from Human OXTR`, y = SynLeft$`Syntenic Genes vs Chicken OXTR`,color = "myline1"),size=1) +
+  geom_line(aes(x = SynRight$`Window from Human OXTR`, y = SynRight$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human OXTR`, y = SynLeft$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human OXTR`, y = SynRight$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human OXTR`, y = SynLeft$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1,linetype=2) +
+  geom_line(aes(x = SynRight$`Window from Human OXTR`, y = SynRight$`Syntenic Genes vs Chicken V2C`, color = "myline4"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human OXTR`, y = SynLeft$`Syntenic Genes vs Chicken V2C`, color = "myline4"), size=1) +
+  scale_colour_manual(name="Receptors", labels = c("Chicken OXTR (Chr 12)","Chicken VTR1A (Chr 1)","Chicken VTR1B (Chr 26)","Chicken VTR2C (Chr 1)"), values=c(myline1="red", myline2 ="blue", myline3="green", myline4="purple")) + 
+  xlab("# of Genes away from Human OXTR") + 
+  xlim(-20,55) +
+  ylim(0,20) +
+  ylab("# of Genes in Synteny")+
+  geom_vline(xintercept = -18, linetype = "dotted") + 
+  geom_text(aes(x=-20,y=6, label="End fo Chromosome 3", angle=90))
+dev.off()
+```
+
+
+
+BLAST Scores
+```{r}
+scores <- read.csv(file = "~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/Blast_HumanVAll_OT_VTR_SM.csv",header = TRUE, row.names = 1)
+tmp <- scores[grep("Chicken",rownames(scores)),]
+```
+
+
+
+                                                           ###TESTING HUMAN AVPR1A ####
+```{r}
+
+ref_chr <-human_reference_regions$AVPR1A
+dim(ref_chr)
+
+gg_chrMatches <- all_hits[na.omit(match(ref_chr$ensembl_gene_id,all_hits$ORG..Homo.sapiens..human.)),]
+gg_chrMatches$gene_name <- ref_chr[match(gg_chrMatches$ORG..Homo.sapiens..human.,human_reference_regions$AVPR1A$ensembl_gene_id),1]
+test <- gg_chrMatches
+
+gg_chrMatches <- gg_chrMatches %>% separate(X.COUNTS, c("#_Human_Gene","#_Chicken_Matches"))
+gg_chrMatches <- gg_chrMatches %>% separate(ORG..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"))
+gg_chrMatches2 <- gg_chrMatches %>% separate(CHR..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"),sep = ",")
+
+```
+
+Set all matches to proxy as NA
+```{r}
+GeneMatches <- gg_chrMatches[,4:12]
+ChrMatches <- gg_chrMatches2[,6:14]
+
+for (i in colnames(GeneMatches)) {
+  tmpIDx <- grep("proxy",GeneMatches[,i])
+  ChrMatches[tmpIDx,i] <- NA
+}
+
+GeneMatches
+ChrMatches
+
+```
+
+Genes on Chicken Chr12 in synteny with human OXTR region. Its critical to intersect them with the OXTR test window defined above. 
+```{r}
+
+#OXTR
+C1_IDs <- ChrMatches
+testList <- list()
+
+
+for (i in colnames(C1_IDs)) {
+  tmpIDx <- grep(oxtr_Chrloc,C1_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr12_ids <- as.vector(unlist(testList))
+
+oxtr_cross <- intersect(chicken_test_regions$OXTR$ensembl_gene_id,Chr12_ids)
+
+
+
+##VTR1B
+C2_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C2_IDs)) {
+  tmpIDx <- grep(vtr1b_Chrloc,C2_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr26_ids <- as.vector(unlist(testList))
+
+v1b_cross <- intersect(chicken_test_regions$V1B$ensembl_gene_id,Chr26_ids)
+
+
+
+###VTR1A###
+
+C3_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C3_IDs)) {
+  tmpIDx <- grep(vtr1a_Chrloc,C3_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v1a_cross <- intersect(chicken_test_regions$V1A$ensembl_gene_id,Chr1_ids)
+
+###VTR2A### ####NEW TO XT
+
+C5_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C5_IDs)) {
+  tmpIDx <- grep(vtr2a_Chrloc,C5_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v2a_cross <- intersect(chicken_test_regions$V2A$ensembl_gene_id,Chr1_ids)
+
+
+
+###V2C###
+C4_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C4_IDs)) {
+  tmpIDx <- grep(vtr2c_Chrloc,C4_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- unlist(testList, recursive = TRUE)
+
+v2c_cross <- intersect(chicken_test_regions$V2C$ensembl_gene_id,Chr1_ids)
+
+
+```
+
+
+Define TRUE POSITIVES from Chicken IDS
+```{r}
+##OXTR
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(oxtr_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_OXTR <- as.vector(na.omit(unlist(testList)))
+
+##V1A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1A <- as.vector(na.omit(unlist(testList)))
+
+##V1B
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1b_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1B <- as.vector(na.omit(unlist(testList)))
+
+##V2A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2A <- as.vector(na.omit(unlist(testList)))
+
+
+##V2C
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2c_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2C <- as.vector(na.omit(unlist(testList)))
+```
+
+
+
+Chicken Loop: Simply ask if any window (of increasing size from Human AVPR1A) is enriched for our true positives genes around the respective Chicken genes. 
+```{r}
+windowSizeR <- 50
+windowSizeL <- 50
+SynRight <- matrix(ncol = 6, nrow = windowSizeR)
+colnames(SynRight) <- c("Window from Human AVPR1A","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+SynLeft <- matrix(ncol = 6, nrow = windowSizeL)
+colnames(SynLeft) <- c("Window from Human AVPR1A","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+
+ for (i in 1:windowSizeR) {
+  tmpDB_right <- gg_chrMatches[(grep("ENSG00000166148",gg_chrMatches$ORG..Homo.sapiens..human.)+i):grep("ENSG00000166148",gg_chrMatches$ORG..Homo.sapiens..human.),]
+
+
+  SynRight[i,1] <- i
+  
+  SynRight[i,2] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynRight[i,3] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynRight[i,4] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynRight[i,5] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynRight[i,6] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynRight <- as.data.frame(SynRight)
+}
+  
+for (i in 1:windowSizeL) {
+  tmpDB_left <- gg_chrMatches[(grep("ENSG00000166148",gg_chrMatches$ORG..Homo.sapiens..human.)-i):grep("ENSG00000166148",gg_chrMatches$ORG..Homo.sapiens..human.),]
+  
+  
+  
+  SynLeft[i,1] <- -i
+  
+  SynLeft[i,2] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynLeft[i,3] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynLeft[i,4] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynLeft[i,5] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynLeft[i,6] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynLeft <- as.data.frame(SynLeft)
+}
+
+SynRight <- rbind(c(0,1,1,1,0,0),SynRight) #only hits = V1B first! V1A and OXTR after
+SynLeft <- rbind(c(0,1,1,1,0,0),SynLeft)
+```
+
+```{r}
+pdf(file = "~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/ChickenVsHumanAVPR1A_Synteny_plot.pdf")
+ggplot() + 
+  geom_line(aes(x = SynRight$`Window from Human AVPR1A`, y = SynRight$`Syntenic Genes vs Chicken OXTR`,color = "myline1"), size = 1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1A`, y = SynLeft$`Syntenic Genes vs Chicken OXTR`,color = "myline1"),size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1A`, y = SynRight$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1A`, y = SynLeft$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1A`, y = SynRight$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1A`, y = SynLeft$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1A`, y = SynRight$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1,linetype=3) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1A`, y = SynLeft$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1,linetype=3) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1A`, y = SynRight$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1A`, y = SynLeft$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  scale_colour_manual(name="Receptors", labels = c("Chicken OXTR (JH126579.1)","Chicken VTR1A (JH127196.1)","Chicken VTR1B (JH127167.1)","Chicken VTR2A (JH127076.1)","Chicken VTR2C (JH127297.1)"), values=c(myline1="red", myline2 ="blue", myline3="green", myline4="orange",myline5="purple")) + 
+  xlab("# of Genes away from Human AVPR1A") + 
+  xlim(-55,55) +
+  ylim(0,8) +
+  ylab("# of Genes in Synteny") 
+dev.off()
+```
+
+
+                           ################################ TESTING HUMAN AVPR1B ######################################
+```{r}
+
+ref_chr <-human_reference_regions$AVPR1B
+dim(ref_chr)
+
+gg_chrMatches <- all_hits[na.omit(match(ref_chr$ensembl_gene_id,all_hits$ORG..Homo.sapiens..human.)),]
+gg_chrMatches$gene_name <- ref_chr[match(gg_chrMatches$ORG..Homo.sapiens..human.,human_reference_regions$AVPR1B$ensembl_gene_id),1]
+test <- gg_chrMatches
+
+gg_chrMatches <- gg_chrMatches %>% separate(X.COUNTS, c("#_Human_Gene","#_Chicken_Matches"))
+gg_chrMatches <- gg_chrMatches %>% separate(ORG..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"))
+gg_chrMatches2 <- gg_chrMatches %>% separate(CHR..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"),sep = ",")
+
+```
+
+Set all matches to proxy as NA
+```{r}
+GeneMatches <- gg_chrMatches[,4:12]
+ChrMatches <- gg_chrMatches2[,6:14]
+
+for (i in colnames(GeneMatches)) {
+  tmpIDx <- grep("proxy",GeneMatches[,i])
+  ChrMatches[tmpIDx,i] <- NA
+}
+
+GeneMatches
+ChrMatches
+
+```
+
+Genes on Chicken Chr12 in synteny with human OXTR region. Its critical to intersect them with the OXTR test window defined above. 
+```{r}
+
+#OXTR
+C1_IDs <- ChrMatches
+testList <- list()
+
+
+for (i in colnames(C1_IDs)) {
+  tmpIDx <- grep(oxtr_Chrloc,C1_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr12_ids <- as.vector(unlist(testList))
+
+oxtr_cross <- intersect(chicken_test_regions$OXTR$ensembl_gene_id,Chr12_ids)
+
+
+
+##VTR1B
+C2_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C2_IDs)) {
+  tmpIDx <- grep(vtr1b_Chrloc,C2_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr26_ids <- as.vector(unlist(testList))
+
+v1b_cross <- intersect(chicken_test_regions$V1B$ensembl_gene_id,Chr26_ids)
+
+
+
+###VTR1A###
+
+C3_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C3_IDs)) {
+  tmpIDx <- grep(vtr1a_Chrloc,C3_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v1a_cross <- intersect(chicken_test_regions$V1A$ensembl_gene_id,Chr1_ids)
+
+###VTR2A### ####NEW TO XT
+
+C5_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C5_IDs)) {
+  tmpIDx <- grep(vtr2a_Chrloc,C5_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v2a_cross <- intersect(chicken_test_regions$V2A$ensembl_gene_id,Chr1_ids)
+
+
+
+###V2C###
+C4_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C4_IDs)) {
+  tmpIDx <- grep(vtr2c_Chrloc,C4_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- unlist(testList, recursive = TRUE)
+
+v2c_cross <- intersect(chicken_test_regions$V2C$ensembl_gene_id,Chr1_ids)
+
+
+```
+
+
+Define TRUE POSITIVES from Chicken IDS
+```{r}
+##OXTR
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(oxtr_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_OXTR <- as.vector(na.omit(unlist(testList)))
+
+##V1A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1A <- as.vector(na.omit(unlist(testList)))
+
+##V1B
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1b_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1B <- as.vector(na.omit(unlist(testList)))
+
+##V2A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2A <- as.vector(na.omit(unlist(testList)))
+
+
+##V2C
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2c_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2C <- as.vector(na.omit(unlist(testList)))
+```
+
+
+
+Chicken Loop: Simply ask if any window (of increasing size from Human AVPR1A) is enriched for our true positives genes around the respective Chicken genes. 
+```{r}
+windowSizeR <- 50
+windowSizeL <- 50
+SynRight <- matrix(ncol = 6, nrow = windowSizeR)
+colnames(SynRight) <- c("Window from Human AVPR1B","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+SynLeft <- matrix(ncol = 6, nrow = windowSizeL)
+colnames(SynLeft) <- c("Window from Human AVPR1B","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+
+ for (i in 1:windowSizeR) {
+  tmpDB_right <- gg_chrMatches[(grep("ENSG00000198049",gg_chrMatches$ORG..Homo.sapiens..human.)+i):grep("ENSG00000198049",gg_chrMatches$ORG..Homo.sapiens..human.),]
+
+
+  SynRight[i,1] <- i
+  
+  SynRight[i,2] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynRight[i,3] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynRight[i,4] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynRight[i,5] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynRight[i,6] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynRight <- as.data.frame(SynRight)
+}
+  
+for (i in 1:windowSizeL) {
+  tmpDB_left <- gg_chrMatches[(grep("ENSG00000198049",gg_chrMatches$ORG..Homo.sapiens..human.)-i):grep("ENSG00000198049",gg_chrMatches$ORG..Homo.sapiens..human.),]
+  
+  
+  
+  SynLeft[i,1] <- -i
+  
+  SynLeft[i,2] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynLeft[i,3] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynLeft[i,4] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynLeft[i,5] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynLeft[i,6] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynLeft <- as.data.frame(SynLeft)
+}
+
+SynRight <- rbind(c(0,1,0,1,1,1),SynRight) #only hits = V1B, V2C, OXTR
+SynLeft <- rbind(c(0,1,0,1,1,1),SynLeft)
+```
+
+```{r}
+pdf(file = "~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/ChickenVsHumanAVPR1B_Synteny_plot.pdf")
+ggplot() + 
+  geom_line(aes(x = SynRight$`Window from Human AVPR1B`, y = SynRight$`Syntenic Genes vs Chicken OXTR`,color = "myline1"), size = 1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1B`, y = SynLeft$`Syntenic Genes vs Chicken OXTR`,color = "myline1"),size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1B`, y = SynRight$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1,linetype=4) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1B`, y = SynLeft$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1,linetype=4) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1B`, y = SynRight$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1B`, y = SynLeft$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1B`, y = SynRight$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1B`, y = SynLeft$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR1B`, y = SynRight$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR1B`, y = SynLeft$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  scale_colour_manual(name="Receptors", labels = c("Chicken OXTR (JH126579.1)","Chicken VTR1A (JH127196.1)","Chicken VTR1B (JH127167.1)","Chicken VTR2A (JH127076.1)","Chicken VTR2C (JH127297.1)"), values=c(myline1="red", myline2 ="blue", myline3="green", myline4="orange",myline5="purple")) + 
+  xlab("# of Genes away from Human AVPR1B") + 
+  xlim(-55,55) +
+  ylim(0,10) +
+  ylab("# of Genes in Synteny") 
+dev.off()
+```
+
+
+                           ################################ TESTING HUMAN AVPR2A ######################################
+```{r}
+
+ref_chr <-human_reference_regions$AVPR2
+dim(ref_chr)
+
+gg_chrMatches <- all_hits[na.omit(match(ref_chr$ensembl_gene_id,all_hits$ORG..Homo.sapiens..human.)),]
+gg_chrMatches$gene_name <- ref_chr[match(gg_chrMatches$ORG..Homo.sapiens..human.,human_reference_regions$AVPR2$ensembl_gene_id),1]
+test <- gg_chrMatches
+
+gg_chrMatches <- gg_chrMatches %>% separate(X.COUNTS, c("#_Human_Gene","#_Chicken_Matches"))
+gg_chrMatches <- gg_chrMatches %>% separate(ORG..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"))
+gg_chrMatches2 <- gg_chrMatches %>% separate(CHR..Latimeria.chalumnae, c("M1","M2","M3","M4","M5","M6","M7","M8","M9"),sep = ",")
+
+```
+
+Set all matches to proxy as NA
+```{r}
+GeneMatches <- gg_chrMatches[,4:12]
+ChrMatches <- gg_chrMatches2[,6:14]
+
+for (i in colnames(GeneMatches)) {
+  tmpIDx <- grep("proxy",GeneMatches[,i])
+  ChrMatches[tmpIDx,i] <- NA
+}
+
+GeneMatches
+ChrMatches
+
+```
+
+Genes on Chicken Chr12 in synteny with human OXTR region. Its critical to intersect them with the OXTR test window defined above. 
+```{r}
+
+#OXTR
+C1_IDs <- ChrMatches
+testList <- list()
+
+
+for (i in colnames(C1_IDs)) {
+  tmpIDx <- grep(oxtr_Chrloc,C1_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr12_ids <- as.vector(unlist(testList))
+
+oxtr_cross <- intersect(chicken_test_regions$OXTR$ensembl_gene_id,Chr12_ids)
+
+
+
+##VTR1B
+C2_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C2_IDs)) {
+  tmpIDx <- grep(vtr1b_Chrloc,C2_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr26_ids <- as.vector(unlist(testList))
+
+v1b_cross <- intersect(chicken_test_regions$V1B$ensembl_gene_id,Chr26_ids)
+
+
+
+###VTR1A###
+
+C3_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C3_IDs)) {
+  tmpIDx <- grep(vtr1a_Chrloc,C3_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v1a_cross <- intersect(chicken_test_regions$V1A$ensembl_gene_id,Chr1_ids)
+
+###VTR2A### ####NEW TO XT
+
+C5_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C5_IDs)) {
+  tmpIDx <- grep(vtr2a_Chrloc,C5_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- as.vector(unlist(testList))
+
+v2a_cross <- intersect(chicken_test_regions$V2A$ensembl_gene_id,Chr1_ids)
+
+
+
+###V2C###
+C4_IDs <- ChrMatches
+testList <- list()
+
+for (i in colnames(C4_IDs)) {
+  tmpIDx <- grep(vtr2c_Chrloc,C4_IDs[,i])
+  testList[[i]] <- gg_chrMatches[tmpIDx,i] 
+}
+
+Chr1_ids <- unlist(testList, recursive = TRUE)
+
+v2c_cross <- intersect(chicken_test_regions$V2C$ensembl_gene_id,Chr1_ids)
+
+
+```
+
+
+Define TRUE POSITIVES from Chicken IDS
+```{r}
+##OXTR
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(oxtr_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_OXTR <- as.vector(na.omit(unlist(testList)))
+
+##V1A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1A <- as.vector(na.omit(unlist(testList)))
+
+##V1B
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v1b_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V1B <- as.vector(na.omit(unlist(testList)))
+
+##V2A
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2a_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2A <- as.vector(na.omit(unlist(testList)))
+
+
+##V2C
+test <- GeneMatches
+names <- colnames(ChrMatches)
+testList <- list()
+
+for (i in names) {
+  tmpIDx <- as.vector(na.omit(match(v2c_cross,test[,i])))
+  testList[[i]] <- gg_chrMatches[tmpIDx,3]
+}
+
+tp_V2C <- as.vector(na.omit(unlist(testList)))
+```
+
+
+
+Chicken Loop: Simply ask if any window (of increasing size from Human AVPR1A) is enriched for our true positives genes around the respective Chicken genes. 
+```{r}
+windowSizeR <- 50
+windowSizeL <- 50
+SynRight <- matrix(ncol = 6, nrow = windowSizeR)
+colnames(SynRight) <- c("Window from Human AVPR2A","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+SynLeft <- matrix(ncol = 6, nrow = windowSizeL)
+colnames(SynLeft) <- c("Window from Human AVPR2A","Syntenic Genes vs Chicken OXTR","Syntenic Genes vs Chicken V1A","Syntenic Genes vs Chicken V1B","Syntenic Genes vs Chicken V2A","Syntenic Genes vs Chicken V2C")
+
+ for (i in 1:windowSizeR) {
+  tmpDB_right <- gg_chrMatches[(grep("ENSG00000126895",gg_chrMatches$ORG..Homo.sapiens..human.)+i):grep("ENSG00000126895",gg_chrMatches$ORG..Homo.sapiens..human.),]
+
+
+  SynRight[i,1] <- i
+  
+  SynRight[i,2] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynRight[i,3] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynRight[i,4] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynRight[i,5] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynRight[i,6] <- length(intersect(tmpDB_right$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynRight <- as.data.frame(SynRight)
+}
+  
+for (i in 1:windowSizeL) {
+  tmpDB_left <- gg_chrMatches[(grep("ENSG00000126895",gg_chrMatches$ORG..Homo.sapiens..human.)-i):grep("ENSG00000126895",gg_chrMatches$ORG..Homo.sapiens..human.),]
+  
+  
+  
+  SynLeft[i,1] <- -i
+  
+  SynLeft[i,2] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_OXTR))
+  
+  SynLeft[i,3] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1A))
+
+  SynLeft[i,4] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V1B))
+  
+  SynLeft[i,5] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2A))
+  
+  SynLeft[i,6] <- length(intersect(tmpDB_left$ORG..Homo.sapiens..human.,tp_V2C))
+
+  SynLeft <- as.data.frame(SynLeft)
+}
+
+SynRight <- rbind(c(0,1,0,1,1,0),SynRight) #only hits = V2A, OXTR, V1B
+SynLeft <- rbind(c(0,1,0,1,1,0),SynLeft)
+```
+
+```{r}
+pdf(file = "~/Documents/vasotocin_receptor_analysis/interspecies_synteny_analysis_1.0_GG/ChickenVsHumanAVPR2A_Synteny_plot.pdf")
+ggplot() + 
+  geom_line(aes(x = SynRight$`Window from Human AVPR2A`, y = SynRight$`Syntenic Genes vs Chicken OXTR`,color = "myline1"), size = 1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR2A`, y = SynLeft$`Syntenic Genes vs Chicken OXTR`,color = "myline1"),size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR2A`, y = SynRight$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR2A`, y = SynLeft$`Syntenic Genes vs Chicken V1A`, color = "myline2"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR2A`, y = SynRight$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1,linetype=4) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR2A`, y = SynLeft$`Syntenic Genes vs Chicken V1B`, color = "myline3"), size=1,linetype=4) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR2A`, y = SynRight$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR2A`, y = SynLeft$`Syntenic Genes vs Chicken V2A`, color = "myline4"), size=1) +
+  geom_line(aes(x = SynRight$`Window from Human AVPR2A`, y = SynRight$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  geom_line(aes(x = SynLeft$`Window from Human AVPR2A`, y = SynLeft$`Syntenic Genes vs Chicken V2C`, color = "myline5"), size=1,linetype=2) +
+  scale_colour_manual(name="Receptors", labels = c("Chicken OXTR (JH126579.1)","Chicken VTR1A (JH127196.1)","Chicken VTR1B (JH127167.1)","Chicken VTR2A (JH127076.1)","Chicken VTR2C (JH127297.1)"), values=c(myline1="red", myline2 ="blue", myline3="green", myline4="orange",myline5="purple")) + 
+  xlab("# of Genes away from Human AVPR2A") + 
+  xlim(-55,55) +
+  ylim(0,8) +
+  ylab("# of Genes in Synteny") 
+dev.off()
+```
+
+
+
+```{r}
+cutoff <- 0.9
+test <- subset(df_GG, padj < cutoff)
+length(unique(test$situ_Name))
+```
+
+
+
